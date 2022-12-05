@@ -28,10 +28,15 @@ def get_axis(size=0.3):
     xyz_axis.colors = o3d.utility.Vector3dVector(colors)
     return xyz_axis
 
-def create_vehicle():
-    body_frame = get_axis()
-    obj = o3d.geometry.TriangleMesh.create_cone(radius=0.05, height=0.15,create_uv_map=True)
-    obj.translate(np.array([0,0,0.1]))
+def create_vehicle(axis_size=1.0):
+    body_frame = get_axis(size=axis_size)
+    #obj = o3d.geometry.TriangleMesh.create_cone(radius=0.05, height=0.15,create_uv_map=True)
+    #obj.translate(np.array([0,0,0.1]))
+
+    dataset = o3d.data.BunnyMesh()
+    obj = o3d.io.read_triangle_mesh(dataset.path)
+    obj.scale(0.7, [0,0,0])
+    obj.compute_vertex_normals()
 
     return obj, body_frame
 
@@ -144,16 +149,20 @@ def never_closed_visualizer(geometry_list):
         vis.update_renderer()
 
 
-def animation_display(static_geoms, animations):
+def animation_display(static_geoms, animations, leaveTrace=False):
     vis = o3d.visualization.Visualizer()
     vis.create_window()
+    opt = vis.get_render_option()
+    opt.background_color = np.asarray([.3,.3,.3])
+    opt.line_width = 3.0 
 
     all_iter = chain(*animations)
-    moving_obj = get_axis(size=0.15)
+    moving_axis = get_axis(size=0.15)
+    #moving_obj, moving_axis = create_vehicle(axis_size=0.15) 
 
     for g in static_geoms:
         vis.add_geometry(g)
-    vis.add_geometry(moving_obj)
+    vis.add_geometry(moving_axis)
 
     pose_save = []
     cache_added_obj = []
@@ -163,15 +172,17 @@ def animation_display(static_geoms, animations):
         try:
             anim_pose, _ = next(all_iter)
             pose_save.append((anim_pose, None))
-            moving_obj.transform(anim_pose)
-            vis.update_geometry(moving_obj)
+            moving_axis.transform(anim_pose)
+            vis.update_geometry(moving_axis)
             vis.poll_events()
             vis.update_renderer()
 
-            anim_trace = copy.deepcopy(moving_obj)
-            cache_added_obj.append(anim_trace)
-            vis.add_geometry(anim_trace, reset_bounding_box=False)
-            moving_obj.transform(np.linalg.inv(anim_pose))
+            # leave trace
+            if leaveTrace:
+                anim_trace = copy.deepcopy(moving_axis)
+                cache_added_obj.append(anim_trace)
+                vis.add_geometry(anim_trace, reset_bounding_box=False)
+            moving_axis.transform(np.linalg.inv(anim_pose))
             time.sleep(0.01)
         except StopIteration:
             for i in range(100):
@@ -180,32 +191,13 @@ def animation_display(static_geoms, animations):
                 time.sleep(0.01)
             all_iter = iter(pose_save) 
             pose_save = []
-            for a in cache_added_obj:
-                vis.remove_geometry(a, reset_bounding_box=False)
-            cache_added_obj = []
+
+            if leaveTrace:
+                for a in cache_added_obj:
+                    vis.remove_geometry(a, reset_bounding_box=False)
+                cache_added_obj = []
             
 
-def animation_persist_display(static_geoms, animations):
-    vis = o3d.visualization.Visualizer()
-    vis.create_window()
-
-    all_iter = chain(*animations)
-    moving_obj = get_axis(size=0.15)
-
-    for g in static_geoms:
-        vis.add_geometry(g)
-    vis.add_geometry(moving_obj)
-
-    while True:
-
-        anim_pose, _ = next(all_iter)
-        moving_obj.transform(anim_pose)
-        vis.add_geometry(copy.deepcopy(moving_obj))
-        #vis.update_geometry(moving_obj)
-        vis.poll_events()
-        vis.update_renderer()
-        moving_obj.transform(np.linalg.inv(anim_pose))
-        time.sleep(0.01)
 
 def main3():
 
@@ -240,27 +232,31 @@ def main3():
     animation_display([orig_frame, straight_route, pose0_axis, pose1_axis, pose2_axis], [rot_anim_keypose1, trans_anim_1, rot_anim_keypose2, trans_anim_2])
 
 
-def main4():
+def break_down_rotation():
 
-    orig_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1)
+    orig_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3)
 
     def transform_all(geoms, tf):
         return [g.transform(tf) for g in geoms]
 
     # init obj pose
-    init_translate = to_homo(trans=np.array([2,0,0]))  
-    rot, rot_3x3 = get_rotation_matrix(90, 45, 30) 
-    rot_part1, _ = get_rotation_matrix(0,0,30)
-    rot_part2, _ = get_rotation_matrix(0,45,0)
-    rot_part3, _ = get_rotation_matrix(90,0,0)
-    print(rot)
-    print(np.dot(rot_part1, np.dot(rot_part2, rot_part3)))
+    init_translate = to_homo(trans=np.array([0.3,0.15,-0.1]))  
+    rot, rot_3x3 = get_rotation_matrix(90, 60, 60) 
+    #rot_part1, _ = get_rotation_matrix(0,0,60)
+    #rot_part2, _ = get_rotation_matrix(0,60,0)
+    #rot_part3, _ = get_rotation_matrix(90,0,0)
+    rot_part1, _ = get_rotation_matrix(0,0,90, order='xyz')
+    rot_part2, _ = get_rotation_matrix(0,-60,0, order='xyz')
+    rot_part3, _ = get_rotation_matrix(60,0,0, order='xyz')
 
-    old_obj, old_obj_axis = create_vehicle()
+    old_obj, old_obj_axis = create_vehicle(axis_size=0.15)
+    pose1_obj, pose1_axis = copy.deepcopy(old_obj), copy.deepcopy(old_obj_axis)
+    pose2_obj, pose2_axis = copy.deepcopy(old_obj), copy.deepcopy(old_obj_axis)
+    #pose3_obj, pose3_axis = copy.deepcopy(old_obj), copy.deepcopy(old_obj_axis)
     old_obj.transform(init_translate)
     old_obj_axis.transform(init_translate)
 
-    new_obj, new_obj_axis = create_vehicle()
+    new_obj, new_obj_axis = create_vehicle(axis_size=0.15)
     new_obj.transform(init_translate).transform(rot)
     new_obj_axis.transform(init_translate).transform(rot)
 
@@ -270,17 +266,64 @@ def main4():
     inter_pose2 = np.dot(rot_part2, inter_pose1)
     inter_pose3 = np.dot(rot_part1, inter_pose2)
 
+    # static obj for keyframe
+    pose1_obj.transform(inter_pose1)
+    pose1_axis.transform(inter_pose1)
+    pose2_obj.transform(inter_pose2)
+    pose2_axis.transform(inter_pose2)
+    #pose3_obj.transform(inter_pose3)
+    #pose3_axis.transform(inter_pose3)
+
     # animation
-    anim_keypose1 = rot_animation(init_translate, inter_pose1)
-    anim_keypose2 = rot_animation(inter_pose1, inter_pose2)
-    anim_keypose3 = rot_animation(inter_pose2, inter_pose3)
+    anim_keypose1 = rot_animation(init_translate, inter_pose1, interval=250)
+    anim_keypose2 = rot_animation(inter_pose1, inter_pose2, interval=250)
+    anim_keypose3 = rot_animation(inter_pose2, inter_pose3, interval=250)
     all_anim = chain(anim_keypose1, anim_keypose2, anim_keypose3)
 
-    animation_display([orig_frame, old_obj, old_obj_axis, new_obj, new_obj_axis], [anim_keypose1, anim_keypose2, anim_keypose3])
-    #animation_persist_display([orig_frame, new_obj, new_obj_axis], [anim_keypose1, anim_keypose2, anim_keypose3])
+    animation_display([orig_frame, 
+        old_obj, 
+        old_obj_axis, 
+        new_obj, 
+        new_obj_axis,
+        pose1_obj,
+        pose1_axis,
+        pose2_obj,
+        pose2_axis], [anim_keypose1, anim_keypose2, anim_keypose3])
 
+def demo_transform_from_origin():
+
+    orig_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.3)
+
+    orig_pose = get_pose_mat([0,0,0,1], [0,0,0])
+
+    quat1 = Rotation.from_euler('zyx', [45,45,45]).as_quat()
+    key_pose1 = get_pose_mat(quat1, [.2, 0.2, 0.1])
+
+    inter_pose = inter_keyframe(orig_pose, key_pose1)
+
+
+    # orig -> inter_pose -> key_pose1
+    old_obj, old_obj_axis = create_vehicle(axis_size=0.15)
+    new_obj, new_obj_axis = create_vehicle(axis_size=0.15)
+    new_obj.transform(key_pose1)
+    new_obj_axis.transform(key_pose1)
+
+    # animation 1
+    rot_anim = rot_animation(orig_pose, inter_pose, interval=200)
+    trans_anim = trans_animation(inter_pose, key_pose1, interval=200)
+
+    animation_display([orig_frame, old_obj, new_obj, new_obj_axis], [rot_anim, trans_anim])
 
     return
 if __name__ == "__main__":
-    main3()
-    #main4()
+    #main3()
+    break_down_rotation()
+    #demo_transform_from_origin()
+
+    #dataset = o3d.data.BunnyMesh()
+    #obj = o3d.io.read_triangle_mesh(dataset.path)
+    #dataset = o3d.data.SwordModel()
+    #obj = o3d.io.read_triangle_model(dataset.path)
+    #dataset = o3d.data.EaglePointCloud()
+    #obj = o3d.io.read_point_cloud(dataset.path)
+    #o3d.visualization.draw_geometries([obj])
